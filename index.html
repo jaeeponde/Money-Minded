@@ -60,6 +60,7 @@ a{color:inherit}
 .piggy{position:fixed;z-index:-2;pointer-events:none;aspect-ratio:862/883;background:url(assets/piggy.webp) center/contain no-repeat;
   width:min(70vmin,540px);right:-9vmin;bottom:-6vmin;opacity:.2;transform:rotate(-8deg);
   transition:right .9s cubic-bezier(.2,.8,.2,1),bottom .9s cubic-bezier(.2,.8,.2,1),width .9s cubic-bezier(.2,.8,.2,1),transform .9s cubic-bezier(.2,.8,.2,1),opacity .9s ease}
+@media (min-width:1000px){.piggy{width:min(42vmin,calc(50vw - 340px));right:-3vmin;bottom:-4vmin;opacity:.16}}
 body.is-landing .piggy{right:50%;bottom:20vh;width:min(60vmin,430px);transform:translateX(50%);opacity:1;animation:bob 5s ease-in-out 1s infinite}
 @keyframes bob{0%,100%{translate:0 0}50%{translate:0 -8px}}
 
@@ -276,6 +277,7 @@ body.is-login .piggy{opacity:0}
 
 /* ---------- logs ---------- */
 .page-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin:6px 0 18px}
+.page-head .title{display:flex;align-items:center;gap:20px;min-width:0}
 .page-head .seg{min-width:260px}
 .monthnav{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 14px}
 .monthnav strong{font-family:var(--serif);font-weight:400;font-size:22px;text-align:center;color:var(--cream);line-height:1.1}
@@ -697,6 +699,8 @@ function route() {
   window.scrollTo({top: 0, behavior: 'instant'});
 }
 window.addEventListener('hashchange', route);
+/* Brand (top left) always goes home, even when the hash is already #home */
+$('.brand').addEventListener('click', e => { e.preventDefault(); if (location.hash === '#home') route(); else location.hash = 'home'; });
 const refresh = () => { const n = current.split('-')[0]; if (['home', 'logs', 'reports', 'login', 'account'].includes(n) || current === '') { if (current) route(); } };
 
 /* ---------------- entry presentation ---------------- */
@@ -726,7 +730,7 @@ function renderHome() {
       <div class="trio">
         <div><p><span class="dot c-inc"></span>Earned</p><strong class="num fit">${fmt(c.inc)}</strong></div>
         <div><p><span class="dot c-exp"></span>Spent</p><strong class="num fit">${fmt(c.expInc + c.expSav)}</strong></div>
-        <div><p><span class="dot c-sav"></span>Saved</p><strong class="num fit">${fmt(c.save)}</strong></div>
+        <div><p><span class="dot c-sav"></span>In savings</p><strong class="num fit ${L.pot < 0 ? 'neg' : ''}">${fmt(L.pot)}</strong></div>
       </div>
     </div>
     <nav class="actions" aria-label="Add">
@@ -765,7 +769,7 @@ function renderAccount() {
   }
   const hasSample = S.entries.some(e => String(e.id).startsWith('demo_'));
   view.innerHTML = `<section class="wrap">
-    <div class="page-head"><h1 class="h-display"><span class="script">my</span> Account</h1></div>
+    <div class="page-head"><div class="title">${backBtn()}<h1 class="h-display"><span class="script">my</span> Account</h1></div></div>
     <div class="glaze acct-card">${who}${action}</div>
     <div class="acct-card velvet stitch"><h2>Your money right now</h2>
       <div class="trio" style="grid-template-columns:repeat(2,minmax(0,1fr))">
@@ -776,7 +780,7 @@ function renderAccount() {
       <div class="tools"><button class="btn ghost" data-act="export">Download backup</button><button class="btn ghost" data-act="import">Restore backup</button></div></div>
     ${hasSample ? `<div class="glaze acct-card"><h2>Sample data</h2><p>The example entries you added are still here.</p><div class="tools"><button class="btn ghost" data-act="unsample">Remove sample data</button></div></div>` : ''}
   </section>`;
-  bindActs();
+  bindActs(); bindPageBack();
 }
 function bindActs() {
   view.querySelectorAll('[data-act]').forEach(b => b.onclick = async () => {
@@ -860,6 +864,9 @@ function head(title, sub, backAction) {
 }
 function bindBack(fn) { view.querySelector('[data-back]').onclick = fn; }
 const leaveFlow = () => { if (previous && previous !== current) history.back(); else location.hash = 'home'; };
+/* Back button for the Logs / Reports / Account pages: goes to the page you came from, or home */
+const backBtn = () => `<button class="back" data-pageback aria-label="Back">${svg('back')}</button>`;
+function bindPageBack() { const b = view.querySelector('[data-pageback]'); if (b) b.onclick = leaveFlow; }
 
 function drawCats() {
   const t = flow.type, list = cats(t);
@@ -1105,7 +1112,7 @@ function renderLogs() {
   const isCur = m === L.cur;
 
   view.innerHTML = `<section class="wrap wide">
-    <div class="page-head"><h1 class="h-display"><span class="script">my</span> Logs</h1>
+    <div class="page-head"><div class="title">${backBtn()}<h1 class="h-display"><span class="script">my</span> Logs</h1></div>
       <div class="seg" role="group" aria-label="Period"><button data-mode="mtd" aria-pressed="${!all}">Month to date</button><button data-mode="all" aria-pressed="${all}">Overall</button></div></div>
     ${all ? '' : `<div class="monthnav"><button data-mnav="-1" aria-label="Previous month" ${m <= first ? 'disabled' : ''}>${svg('back')}</button>
       <strong>${monthLabel(m)}<small>${isCur ? `1–${new Date().getDate()} ${MON[new Date().getMonth()]} so far` : 'Full month'}</small></strong>
@@ -1123,6 +1130,7 @@ function renderLogs() {
       ${colHTML('Savings', 'c-sav', (savNet > 0 && !all ? '+' : '') + fmt(savNet), savingsGroups(sav, wd, expS, sweeps), (sav.length + wd.length + expS.length + sweeps.length) ? '' : emptyCol('Nothing moved to savings', 'save'))}
     </div>
   </section>`;
+  bindPageBack();
   view.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { logsState.mode = b.dataset.mode; renderLogs(); });
   view.querySelectorAll('[data-mnav]').forEach(b => b.onclick = () => {
     const [y, mo] = m.split('-').map(Number); const d = new Date(y, mo - 1 + +b.dataset.mnav, 1);
@@ -1194,7 +1202,7 @@ function renderReports() {
   const topName = top ? (catById('expense', top.k)?.name || 'Other') : '—';
 
   view.innerHTML = `<section class="wrap wide">
-    <div class="page-head"><h1 class="h-display"><span class="script">my</span> Reports</h1>
+    <div class="page-head"><div class="title">${backBtn()}<h1 class="h-display"><span class="script">my</span> Reports</h1></div>
       <div class="years" role="group" aria-label="Year">${years.map(v => `<button data-year="${v}" aria-pressed="${v === y}">${v}</button>`).join('')}</div></div>
     <div class="stats">
       <div class="stat velvet stitch"><p>Spent in ${y}</p><strong class="num">${fmt(spent)}</strong><small>${exp.length} expense${exp.length === 1 ? '' : 's'}</small></div>
@@ -1210,6 +1218,7 @@ function renderReports() {
         <div>${exp.slice().sort((a, b) => b.amount - a.amount).slice(0, 5).map(rowHTML).join('')}</div></section>
     </div>` : `<div class="glaze empty" style="padding:40px 20px">No expenses logged in ${y} yet. Once you add some, you'll see where your money goes here.<br><a class="btn primary" href="#add-expense">Add expense</a></div>`}
   </section>`;
+  bindPageBack();
   view.querySelectorAll('[data-year]').forEach(b => b.onclick = () => { repState.year = +b.dataset.year; repState.cat = null; renderReports(); });
   if (exp.length) { drawPie(exp, spent); drawBars(E, y); bindRows(view); }
 }

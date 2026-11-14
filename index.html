@@ -60,8 +60,9 @@ a{color:inherit}
 .piggy{position:fixed;z-index:-2;pointer-events:none;aspect-ratio:862/883;background:url(assets/piggy.webp) center/contain no-repeat;
   width:min(70vmin,540px);right:-9vmin;bottom:-6vmin;opacity:.2;transform:rotate(-8deg);
   transition:right .9s cubic-bezier(.2,.8,.2,1),bottom .9s cubic-bezier(.2,.8,.2,1),width .9s cubic-bezier(.2,.8,.2,1),transform .9s cubic-bezier(.2,.8,.2,1),opacity .9s ease}
-@media (min-width:1000px){.piggy{width:min(42vmin,calc(50vw - 340px));right:-3vmin;bottom:-4vmin;opacity:.16}}
-body.is-landing .piggy{right:50%;bottom:20vh;width:min(60vmin,430px);transform:translateX(50%);opacity:1;animation:bob 5s ease-in-out 1s infinite}
+@media (min-width:1000px){.piggy{width:min(42vmin,calc(50vw - 340px));right:-3vmin;bottom:-4vmin;opacity:.16}
+  body.is-wide .piggy{width:max(0px,min(42vmin,calc(50vw - 600px)))}}
+body.is-landing .piggy{right:50%;bottom:calc(var(--safe-b) + 8vh + 76px);width:max(120px,min(60vmin,430px,calc(82vh - 330px)));transform:translateX(50%);opacity:1;animation:bob 5s ease-in-out 1s infinite}
 @keyframes bob{0%,100%{translate:0 0}50%{translate:0 -8px}}
 
 /* little reusable textures */
@@ -321,6 +322,14 @@ details[open]>summary .chev{transform:rotate(90deg)}
 .entry .m span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .entry .m small{color:var(--ink-3);font-size:12.5px}
 .entry .a{white-space:nowrap;font-size:15px;font-weight:500}
+.swipe{position:relative;overflow:hidden;border-radius:12px;touch-action:pan-y}
+.swipe .entry{position:relative;z-index:1;transition:width .22s cubic-bezier(.2,.8,.2,1)}
+.swipe.dragging .entry{transition:none}
+.swipe.open .entry{width:calc(100% - 92px)}
+.swipe.open .entry,.swipe.dragging .entry{background:var(--card)}
+.swipe-del{position:absolute;top:0;right:0;bottom:0;width:88px;display:grid;place-items:center;gap:2px;background:#8E2F2F;color:var(--cream);font-size:13px;font-weight:600;opacity:0;visibility:hidden;transition:opacity .15s,visibility .15s}
+.swipe-del svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.swipe.open .swipe-del,.swipe.dragging .swipe-del{opacity:1;visibility:visible}
 .pill{display:inline-block;font-size:11px;padding:1px 8px;border-radius:999px;background:rgba(226,201,140,.15);color:var(--saving);margin-left:6px;vertical-align:1px}
 .col .empty{padding:18px 4px 14px;font-size:14.5px}
 
@@ -611,6 +620,10 @@ function ledger(entries = S.entries) {
 /* ---------------- UI primitives ---------------- */
 let toastT;
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2600); }
+/* Every open sheet pushes a history entry, so the browser/phone Back button closes the sheet
+   and leaves you on the page you were on (e.g. the expense form) instead of jumping back a page. */
+const sheets = []; let sheetSeq = 0;
+window.addEventListener('popstate', () => { const top = sheets[sheets.length - 1]; if (top && (!history.state || history.state.sheet !== top.id)) top.dismiss(); });
 function openSheet(html, {onClose, label = 'Dialog'} = {}) {
   const ov = document.createElement('div');
   ov.className = 'overlay';
@@ -618,8 +631,15 @@ function openSheet(html, {onClose, label = 'Dialog'} = {}) {
   document.body.appendChild(ov);
   const prev = document.activeElement;
   requestAnimationFrame(() => ov.classList.add('open'));
+  const id = ++sheetSeq, rec = {id};
+  let pushed = false;
+  try { history.pushState({sheet: id}, ''); pushed = true; } catch (e) {}
+  sheets.push(rec);
   let closed = false;
-  const close = () => { if (closed) return; closed = true; ov.classList.remove('open'); document.removeEventListener('keydown', onKey); setTimeout(() => ov.remove(), 260); onClose && onClose(); prev && prev.focus && prev.focus({preventScroll: true}); };
+  const dismiss = () => { if (closed) return; closed = true; const i = sheets.indexOf(rec); if (i >= 0) sheets.splice(i, 1); ov.classList.remove('open'); document.removeEventListener('keydown', onKey); setTimeout(() => ov.remove(), 260); onClose && onClose(); prev && prev.focus && prev.focus({preventScroll: true}); };
+  rec.dismiss = dismiss;
+  /* closing from inside the sheet pops our history entry first; the popstate then dismisses it */
+  const close = () => { if (closed) return; if (pushed && history.state && history.state.sheet === id) history.back(); else dismiss(); };
   const onKey = e => { if (e.key === 'Escape') close(); };
   document.addEventListener('keydown', onKey);
   ov.addEventListener('click', e => { if (e.target === ov) close(); });
@@ -683,6 +703,7 @@ function route() {
   if (name !== 'login' && needsLogin()) { location.replace('#login'); return; }
   if (name === 'login' && Cloud.user) { location.replace('#home'); return; }
   document.body.classList.toggle('is-login', name === 'login');
+  document.body.classList.toggle('is-wide', name === 'logs' || name === 'reports');
   previous = current; current = h;
   $$('[data-nav]').forEach(n => n.toggleAttribute('aria-current', false));
   const nav = $(`[data-nav="${name}"]`); if (nav) nav.setAttribute('aria-current', 'page');
@@ -730,7 +751,7 @@ function renderHome() {
       <div class="trio">
         <div><p><span class="dot c-inc"></span>Earned</p><strong class="num fit">${fmt(c.inc)}</strong></div>
         <div><p><span class="dot c-exp"></span>Spent</p><strong class="num fit">${fmt(c.expInc + c.expSav)}</strong></div>
-        <div><p><span class="dot c-sav"></span>In savings</p><strong class="num fit ${L.pot < 0 ? 'neg' : ''}">${fmt(L.pot)}</strong></div>
+        <div><p><span class="dot c-sav"></span>Savings</p><strong class="num fit ${L.pot < 0 ? 'neg' : ''}">${fmt(L.pot)}</strong></div>
       </div>
     </div>
     <nav class="actions" aria-label="Add">
@@ -774,7 +795,7 @@ function renderAccount() {
     <div class="acct-card velvet stitch"><h2>Your money right now</h2>
       <div class="trio" style="grid-template-columns:repeat(2,minmax(0,1fr))">
         <div><p><span class="dot c-inc"></span>Left to spend</p><strong class="num fit ${L.spend < 0 ? 'neg' : ''}">${fmt(L.spend)}</strong></div>
-        <div><p><span class="dot c-sav"></span>In savings</p><strong class="num fit ${L.pot < 0 ? 'neg' : ''}">${fmt(L.pot)}</strong></div>
+        <div><p><span class="dot c-sav"></span>Savings</p><strong class="num fit ${L.pot < 0 ? 'neg' : ''}">${fmt(L.pot)}</strong></div>
       </div></div>
     <div class="glaze acct-card"><h2>Backups</h2><p>Download a copy of all your entries, or bring one back.</p>
       <div class="tools"><button class="btn ghost" data-act="export">Download backup</button><button class="btn ghost" data-act="import">Restore backup</button></div></div>
@@ -1078,20 +1099,25 @@ function openDateSheet(value, onPick) {
   const wd = makeWheel($('#wD', el), i => { D = i + 1; settle(); });
   const wm = makeWheel($('#wM', el), i => { M = i; settle(); });
   const wy = makeWheel($('#wY', el), i => { Y = years[i]; settle(); });
+  /* months after this one (in the current year) and days after today (in the current month) are never shown */
+  const maxM = () => Y === tY ? today.getMonth() : 11;
+  const maxD = () => Y === tY && M === today.getMonth() ? today.getDate() : dim(Y, M);
   function settle() {
-    if (new Date(Y, M, Math.min(D, dim(Y, M))) > today) { Y = tY; M = today.getMonth(); D = today.getDate(); wy.go(years.indexOf(Y)); wm.go(M); }
-    const n = dim(Y, M);
+    if (M > maxM()) M = maxM();
+    const nm = maxM() + 1;
+    if (wm.n !== nm) wm.set(MON.slice(0, nm), M); else wm.go(M);
+    const n = maxD();
     if (D > n) D = n;
     if (wd.n !== n) wd.set(Array.from({length: n}, (_, i) => i + 1), D - 1); else wd.go(D - 1);
     read();
   }
   requestAnimationFrame(() => {
-    wd.set(Array.from({length: dim(Y, M)}, (_, i) => i + 1), D - 1);
-    wm.set(MON, M); wy.set(years, years.indexOf(Y)); read();
+    wd.set(Array.from({length: maxD()}, (_, i) => i + 1), D - 1);
+    wm.set(MON.slice(0, maxM() + 1), M); wy.set(years, years.indexOf(Y)); read();
   });
   el.querySelectorAll('[data-q]').forEach(b => b.onclick = () => {
     const t = new Date(today); t.setDate(t.getDate() - +b.dataset.q); D = t.getDate(); M = t.getMonth(); Y = t.getFullYear();
-    wy.go(years.indexOf(Y)); wm.go(M); wd.set(Array.from({length: dim(Y, M)}, (_, i) => i + 1), D - 1); read();
+    wy.go(years.indexOf(Y)); wm.set(MON.slice(0, maxM() + 1), M); wd.set(Array.from({length: maxD()}, (_, i) => i + 1), D - 1); read();
   });
   $('[data-done]', el).onclick = () => { const n = dim(Y, M); onPick(iso(new Date(Y, M, Math.min(D, n)))); sh.close(); };
 }
@@ -1137,6 +1163,7 @@ function renderLogs() {
     logsState.month = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`; renderLogs();
   });
   view.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => { location.hash = 'edit-' + b.dataset.edit; });
+  bindSwipes(view);
   const colsEl = $('#cols'), tabs = $$('[data-col]');
   tabs.forEach(b => b.onclick = () => { const c = colsEl.children[+b.dataset.col]; colsEl.scrollTo({left: c.offsetLeft - 18, behavior: 'smooth'}); });
   colsEl.addEventListener('scroll', () => {
@@ -1150,7 +1177,43 @@ const colHTML = (name, cls, total, body, empty) => `<section class="glaze col" a
   <div class="col-head"><h2><span class="dot ${cls}"></span>${name}</h2><span class="num">${total}</span></div>${empty || body}</section>`;
 function entryHTML(e, amt = e.amount, neg = false) {
   const p = present(e);
-  return `<button class="entry" data-edit="${e.id}"><span class="m"><span>${esc(e.label || (subOf(e)?.name) || catOf(e).name)}${fromSav(e) && !neg ? `<span class="pill">${fromSav(e) >= e.amount ? 'from savings' : fmt(fromSav(e)) + ' from savings'}</span>` : ''}</span><small>${shortDate(e.date)}</small></span><span class="a num">${neg ? '−' : ''}${fmt(amt)}</span></button>`;
+  return `<div class="swipe"><button class="entry" data-edit="${e.id}"><span class="m"><span>${esc(e.label || (subOf(e)?.name) || catOf(e).name)}${fromSav(e) && !neg ? `<span class="pill">${fromSav(e) >= e.amount ? 'from savings' : fmt(fromSav(e)) + ' from savings'}</span>` : ''}</span><small>${shortDate(e.date)}</small></span><span class="a num">${neg ? '−' : ''}${fmt(amt)}</span></button><button type="button" class="swipe-del" data-del="${e.id}" aria-label="Delete entry"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>Delete</button></div>`;
+}
+/* Swipe a log entry left to reveal Delete. A short tap still opens the entry for editing. */
+function bindSwipes(root) {
+  const all = [...root.querySelectorAll('.swipe')];
+  const closeAll = except => all.forEach(w => { if (w !== except) w.classList.remove('open'); });
+  all.forEach(w => {
+    const btn = w.querySelector('.entry'); let x0 = 0, dx = 0, down = false, moved = false;
+    w.addEventListener('pointerdown', e => { if (e.button) return; x0 = e.clientX; dx = 0; down = true; moved = false; });
+    w.addEventListener('pointermove', e => {
+      if (!down) return; dx = e.clientX - x0;
+      if (!moved && Math.abs(dx) < 8) return;
+      if (!moved) { moved = true; closeAll(w); w.classList.add('dragging'); try { w.setPointerCapture(e.pointerId); } catch (_) {} }
+      const open = w.classList.contains('open'), base = open ? -92 : 0, t = Math.max(-110, Math.min(0, base + dx));
+      btn.style.width = `calc(100% + ${t}px)`;
+    });
+    const end = () => {
+      if (!down) return; down = false; w.classList.remove('dragging'); btn.style.width = '';
+      if (!moved) return;
+      const open = w.classList.contains('open');
+      w.classList.toggle('open', open ? dx < 40 : dx < -40);
+      w.dataset.swiped = '1'; setTimeout(() => delete w.dataset.swiped, 300);
+    };
+    w.addEventListener('pointerup', end); w.addEventListener('pointercancel', end);
+    w.querySelector('.swipe-del').onclick = async () => {
+      const e = S.entries.find(x => x.id === w.querySelector('.swipe-del').dataset.del); if (!e) return;
+      const ok = await ask({title: 'Delete this entry?', body: `${esc(present(e).title)}, ${fmt(e.amount)} on ${shortDate(e.date)}. This can't be undone.`, actions: [{label: 'Delete', value: 1, style: 'primary'}, {label: 'Keep it', value: 0}]});
+      if (!ok) { w.classList.remove('open'); return; }
+      removeEntry(e.id); toast('Entry deleted'); renderLogs();
+    };
+  });
+  /* a drag, or a tap on a row that is already swiped open, must not open the entry */
+  root.addEventListener('click', e => {
+    const w = e.target.closest('.swipe'); if (!w || e.target.closest('.swipe-del')) return;
+    if (w.dataset.swiped || w.classList.contains('open')) { e.stopPropagation(); e.preventDefault(); delete w.dataset.swiped; closeAll(); }
+  }, true);
+  root.addEventListener('pointerdown', e => { if (!e.target.closest('.swipe')) closeAll(); });
 }
 function groupByCat(t, list) {
   const groups = new Map();
